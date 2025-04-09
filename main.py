@@ -3,6 +3,7 @@ from pytrends.request import TrendReq
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 from datetime import datetime
+from fastapi.responses import JSONResponse
 import pandas as pd
 import time  # ✅ ajout pour limiter les requêtes trop rapides
 
@@ -14,8 +15,6 @@ app = FastAPI()
 def root():
     return {"status": "OK", "message": "API d'analyse comportementale opérationnelle"}
 
-@app.get("/generate")
-from fastapi.responses import JSONResponse
 
 @app.get("/generate")
 def generate_report():

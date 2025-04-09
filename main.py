@@ -1,11 +1,9 @@
 from fastapi import FastAPI
 from pytrends.request import TrendReq
-from openpyxl import Workbook
-from openpyxl.styles import Font, PatternFill, Alignment
-from datetime import datetime
 from fastapi.responses import JSONResponse
+from datetime import datetime
 import pandas as pd
-import time  # ✅ ajout pour limiter les requêtes trop rapides
+import time
 
 pd.set_option('future.no_silent_downcasting', True)
 
@@ -14,7 +12,6 @@ app = FastAPI()
 @app.get("/")
 def root():
     return {"status": "OK", "message": "API d'analyse comportementale opérationnelle"}
-
 
 @app.get("/generate")
 def generate_report():
@@ -28,60 +25,56 @@ def generate_report():
         "Technologie & abonnements": ["abonnement Netflix", "désabonnement", "Spotify", "Disney+", "Prime Video"]
     }
 
-    all_data = []
+    data_tabulaire = []
     sentiments = []
-    sector_summaries = {}
 
-    for sector, keywords in SECTORS.items():
-        pytrends.build_payload(keywords, cat=0, timeframe='now 7-d', geo='FR', gprop='')
-        data = pytrends.interest_over_time()
-        if 'isPartial' in data.columns:
-            data = data.drop(columns='isPartial')
+    for secteur, mots_cles in SECTORS.items():
+        try:
+            pytrends.build_payload(mots_cles, cat=0, timeframe='now 7-d', geo='FR', gprop='')
+            df = pytrends.interest_over_time()
+        except Exception:
+            continue
 
-        sector_data = []
+        if 'isPartial' in df.columns:
+            df = df.drop(columns='isPartial')
+
         deltas = []
 
-        for keyword in keywords:
-            if keyword in data.columns:
-                trend = data[keyword]
-                avg = round(trend.mean(), 1)
-                pct_change = round(((trend.iloc[-1] - trend.iloc[0]) / max(trend.iloc[0], 1)) * 100, 1)
-                deltas.append(pct_change)
+        for mot in mots_cles:
+            if mot in df.columns:
+                tendance = df[mot]
+                moyenne = round(tendance.mean(), 1)
+                variation = round(((tendance.iloc[-1] - tendance.iloc[0]) / max(tendance.iloc[0], 1)) * 100, 1)
+                deltas.append(variation)
 
-                impact = "Hausse" if pct_change > 10 else "Baisse" if pct_change < -10 else "Stable"
+                interpretation = "Hausse" if variation > 10 else "Baisse" if variation < -10 else "Stable"
 
-                sector_data.append({
-                    "mot_clé": keyword,
-                    "score_moyen": avg,
-                    "variation_%": pct_change,
-                    "interprétation": impact
+                data_tabulaire.append({
+                    "secteur": secteur,
+                    "mot_cle": mot,
+                    "score_moyen": moyenne,
+                    "variation_pourcent": variation,
+                    "interpretation": interpretation
                 })
 
-        sentiment = sum(deltas) / len(deltas) if deltas else 0
-        sentiments.append(sentiment)
+        if deltas:
+            sentiments.append(sum(deltas) / len(deltas))
+        time.sleep(2)  # pour éviter un code 429
 
-        summary = {
-            "tendance": "positive" if sentiment > 10 else "négative" if sentiment < -10 else "stable",
-            "variation_moyenne": round(sentiment, 1)
-        }
+    tendance_globale = (
+        "positive" if sum(sentiments)/len(sentiments) > 10 else
+        "négative" if sum(sentiments)/len(sentiments) < -10 else
+        "stable"
+    )
+    variation_moyenne_globale = round(sum(sentiments) / len(sentiments), 1) if sentiments else 0
 
-        sector_summaries[sector] = summary
-
-        all_data.append({
-            "secteur": sector,
-            "données": sector_data,
-            "résumé": summary
-        })
-
-    global_sentiment = sum(sentiments) / len(sentiments)
-    global_summary = {
-        "tendance_globale": "positive" if global_sentiment > 10 else "négative" if global_sentiment < -10 else "stable",
-        "variation_moyenne": round(global_sentiment, 1)
-    }
+    today = datetime.now().strftime("%Y-%m-%d")
 
     return JSONResponse(content={
-        "analyse": all_data,
-        "résumés_sectoriels": sector_summaries,
-        "résumé_global": global_summary
+        "date": today,
+        "tableau": data_tabulaire,
+        "résumé_global": {
+            "tendance_globale": tendance_globale,
+            "variation_moyenne": variation_moyenne_globale
+        }
     })
-    return {"status": "ok", "fichier": filename}
